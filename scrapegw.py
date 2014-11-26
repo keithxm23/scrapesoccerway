@@ -2,7 +2,7 @@
 __author__ = "Keith Mascarenhas"
 __email__ = "keithxm23@gmail.com"
 
-import requests, json, re, pdb
+import requests, json, re, pdb, hashlib, cPickle as pickle, datetime
 from bs4 import BeautifulSoup as BS
 
 BASE_URL = 'http://us.soccerway.com/a/block_competition_matches_summary?block_id=page_competition_1_block_competition_matches_summary_6&callback_params={"page":"%d","bookmaker_urls":[],"block_service_id":"competition_summary_block_competitionmatchessummary","round_id":"%s","outgroup":"","view":"2"}&action=changePage&params={"page":%d}'
@@ -19,8 +19,9 @@ def main():
 	season_ids = [x for x in season_soup.select("#season_id_selector")[0].contents if x != '\n'] 
 	#print season_ids
 	seasons = []
+	seen_matches = set()
 #	pdb.set_trace()
-	for s in season_ids[::]:
+	for s in season_ids[:]:
 		rs = requests.get(BASE_SOCCERWAY_URL + s['value'])
 		#print s['value'], rs.url
 		tmp_season = {}
@@ -42,7 +43,10 @@ def main():
 				tmp['season'] = tmp_season['season']	
 				tmp['comp_id'], tmp['comp_name'] = EPL_ID, EPL_NAME
 				tmp['day'] = g.contents[0].text.encode('utf-8') 
-				tmp['date'] = g.contents[1].text.encode('utf-8') 
+				day,month,year = g.contents[1].text.encode('utf-8').split('/')
+				across_years = tmp_season['season'].split('/')
+				year = across_years[0] if across_years[0].endswith(year) else across_years[1]
+				tmp['date'] =  datetime.datetime.strptime(day+month+year,'%d%m%Y')
 				tmp['home_team'] = g.contents[2].text.encode('utf-8') 
 				tmp['home_team_id'] = int(re.findall(r'/(\d+)/$', g.contents[2].a['href'])[0])
 				tmp['away_team'] = g.contents[5].text.encode('utf-8') 
@@ -54,11 +58,16 @@ def main():
 					tmp['home_points'] = tmp['away_points'] = 1
 				else:
 					tmp['home_points'], tmp['away_points'] = (3,0) if tmp['home_goals'] > tmp['away_goals'] else (0,3)
+				hashtext = "%d_%d_%d_%d" % (tmp['home_team_id'],tmp['away_team_id'],tmp['season_id'],tmp['comp_id'])
+				tmp['hash'] = hashlib.sha256(hashtext).digest()
+				seen_matches.add(tmp['hash'])
 				matches.append(tmp)
-				print tmp
+				#print tmp
 		print "_________________________________________________________________"*2
 		print len(matches)
 		seasons.append(matches)
+	with open ("dump.p", "wb") as f:
+		pickle.dump(seasons, f)
 
 if __name__ == '__main__':
 	main()
